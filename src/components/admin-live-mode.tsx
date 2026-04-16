@@ -19,6 +19,7 @@ export function AdminLiveModeSwitch() {
   const [mode, setMode] = useState<DashboardMode>("static");
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate from localStorage after mount
     setMode(readStoredMode());
   }, []);
 

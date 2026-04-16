@@ -2,16 +2,46 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { DownloadIcon, ResetIcon, SpinnerIcon } from "@/components/admin-action-icons";
+import { DownloadIcon, ResetIcon, ReturnToProgressIcon, SpinnerIcon } from "@/components/admin-action-icons";
 
 type Props = {
   studentId: number;
   studentName: string;
+  attemptStatus: string;
 };
 
-export function AdminStudentActions({ studentId, studentName }: Props) {
+export function AdminStudentActions({ studentId, studentName, attemptStatus }: Props) {
   const router = useRouter();
+  const [isReopening, setIsReopening] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+
+  const canReturnToProgress = attemptStatus === "submitted";
+
+  async function handleReturnToProgress() {
+    const confirmed = window.confirm(
+      `Return ${studentName}'s assessment to in progress? Their saved answers will stay on file; only the submitted status will be cleared so they can continue or resubmit.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsReopening(true);
+
+    const response = await fetch(`/api/admin/reopen-attempt/${studentId}`, {
+      method: "POST",
+    });
+
+    setIsReopening(false);
+
+    if (!response.ok) {
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      window.alert(data?.error ?? "Could not update attempt.");
+      return;
+    }
+
+    router.refresh();
+  }
 
   async function handleReset() {
     const confirmed = window.confirm(
@@ -39,6 +69,8 @@ export function AdminStudentActions({ studentId, studentName }: Props) {
   }
 
   const downloadLabel = `Download answer script for ${studentName}`;
+  const returnLabel = `Return ${studentName}'s assessment to in progress (keep answers)`;
+  const returnDisabledTitle = "Only available when status is submitted.";
   const resetLabel = `Reset submission for ${studentName}`;
 
   return (
@@ -55,6 +87,21 @@ export function AdminStudentActions({ studentId, studentName }: Props) {
       >
         <DownloadIcon className="h-5 w-5 shrink-0" />
       </a>
+      <button
+        type="button"
+        onClick={() => void handleReturnToProgress()}
+        disabled={!canReturnToProgress || isReopening}
+        aria-disabled={!canReturnToProgress || isReopening}
+        className="inline-flex h-10 w-10 items-center justify-center bg-white text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label={canReturnToProgress ? returnLabel : returnDisabledTitle}
+        title={canReturnToProgress ? returnLabel : returnDisabledTitle}
+      >
+        {isReopening ? (
+          <SpinnerIcon className="h-5 w-5 shrink-0 animate-spin" />
+        ) : (
+          <ReturnToProgressIcon className="h-5 w-5 shrink-0" />
+        )}
+      </button>
       <button
         type="button"
         onClick={() => void handleReset()}

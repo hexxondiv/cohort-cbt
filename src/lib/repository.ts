@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { normalizePhoneNumber } from "@/lib/phone";
 
 export type StudentRecord = {
   id: number;
@@ -7,6 +8,7 @@ export type StudentRecord = {
   phone_raw: string;
   phone_normalized: string;
   module_average: number | null;
+  is_active: number;
 };
 
 export type AttemptRecord = {
@@ -22,16 +24,141 @@ export type ResponseRecord = {
   saved_at: string;
 };
 
-export function findStudentByPhone(phone: string) {
+export function findStudentByNormalizedPhone(phone: string) {
   const db = getDb();
   return db
-    .prepare("SELECT * FROM students WHERE phone_normalized = ? AND is_active = 1")
+    .prepare("SELECT * FROM students WHERE phone_normalized = ?")
     .get(phone) as StudentRecord | undefined;
+}
+
+export function findStudentByPhone(phone: string) {
+  const student = findStudentByNormalizedPhone(phone);
+  if (!student || student.is_active !== 1) {
+    return undefined;
+  }
+  return student;
 }
 
 export function findStudentById(studentId: number) {
   const db = getDb();
   return db.prepare("SELECT * FROM students WHERE id = ?").get(studentId) as StudentRecord | undefined;
+}
+
+export function listAllStudentsOrdered() {
+  const db = getDb();
+  return db.prepare("SELECT * FROM students ORDER BY full_name ASC").all() as StudentRecord[];
+}
+
+export function createStudent(input: {
+  fullName: string;
+  email: string;
+  phone: string;
+  moduleAverage: number | null;
+}) {
+  const db = getDb();
+  let normalized: string;
+  try {
+    normalized = normalizePhoneNumber(input.phone);
+  } catch {
+    throw new Error("INVALID_PHONE");
+  }
+
+  const fullName = input.fullName.trim();
+  const email = input.email.trim();
+  const phoneRaw = input.phone.trim();
+
+  if (!fullName || !email) {
+    throw new Error("INVALID_INPUT");
+  }
+
+  try {
+    const result = db
+      .prepare(
+        `
+          INSERT INTO students (full_name, email, phone_raw, phone_normalized, module_average)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+      )
+      .run(fullName, email, phoneRaw, normalized, input.moduleAverage);
+
+    return findStudentById(Number(result.lastInsertRowid))!;
+  } catch (error: unknown) {
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code: string }).code) : "";
+    if (code.includes("SQLITE_CONSTRAINT")) {
+      throw new Error("DUPLICATE_PHONE");
+    }
+    throw error;
+  }
+}
+
+export function updateStudent(
+  studentId: number,
+  input: {
+    fullName?: string;
+    email?: string;
+    phone?: string;
+    moduleAverage?: number | null;
+    isActive?: boolean;
+  },
+) {
+  const existing = findStudentById(studentId);
+  if (!existing) {
+    return null;
+  }
+
+  let phoneRaw = existing.phone_raw;
+  let normalized = existing.phone_normalized;
+
+  if (input.phone !== undefined) {
+    try {
+      normalized = normalizePhoneNumber(input.phone);
+      phoneRaw = input.phone.trim();
+    } catch {
+      throw new Error("INVALID_PHONE");
+    }
+  }
+
+  const fullName = input.fullName !== undefined ? input.fullName.trim() : existing.full_name;
+  const email = input.email !== undefined ? input.email.trim() : existing.email;
+  const moduleAverage = input.moduleAverage !== undefined ? input.moduleAverage : existing.module_average;
+  const isActive =
+    input.isActive !== undefined ? (input.isActive ? 1 : 0) : existing.is_active;
+
+  if (!fullName || !email) {
+    throw new Error("INVALID_INPUT");
+  }
+
+  const db = getDb();
+
+  try {
+    db.prepare(
+      `
+        UPDATE students
+        SET
+          full_name = ?,
+          email = ?,
+          phone_raw = ?,
+          phone_normalized = ?,
+          module_average = ?,
+          is_active = ?
+        WHERE id = ?
+      `,
+    ).run(fullName, email, phoneRaw, normalized, moduleAverage, isActive, studentId);
+  } catch (error: unknown) {
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code: string }).code) : "";
+    if (code.includes("SQLITE_CONSTRAINT")) {
+      throw new Error("DUPLICATE_PHONE");
+    }
+    throw error;
+  }
+
+  return findStudentById(studentId)!;
+}
+
+export function softDeleteStudent(studentId: number) {
+  const db = getDb();
+  const result = db.prepare("UPDATE students SET is_active = 0 WHERE id = ?").run(studentId);
+  return result.changes > 0;
 }
 
 export function listActiveStudentsOrdered() {
@@ -111,6 +238,26 @@ export function submitAttempt(studentId: number) {
     .get(studentId) as AttemptRecord;
 }
 
+/** Sets attempt back to in_progress without deleting saved answers (only when currently submitted). */
+export function reopenSubmittedAttempt(studentId: number): "ok" | "no_attempt" | "not_submitted" {
+  const db = getDb();
+  const attempt = getAttemptForStudent(studentId);
+  if (!attempt) {
+    return "no_attempt";
+  }
+  if (attempt.status !== "submitted") {
+    return "not_submitted";
+  }
+
+  const result = db
+    .prepare(
+      "UPDATE attempts SET status = 'in_progress', submitted_at = NULL WHERE student_id = ? AND status = 'submitted'",
+    )
+    .run(studentId);
+
+  return result.changes > 0 ? "ok" : "not_submitted";
+}
+
 export function resetStudentSubmission(studentId: number) {
   const db = getDb();
 
@@ -140,8 +287,10 @@ export function getAdminOverview() {
           students.id,
           students.full_name,
           students.email,
+          students.phone_raw,
           students.phone_normalized,
           students.module_average,
+          students.is_active,
           attempts.started_at,
           attempts.submitted_at,
           COALESCE(attempts.status, 'not_started') AS status,
@@ -157,8 +306,10 @@ export function getAdminOverview() {
     id: number;
     full_name: string;
     email: string;
+    phone_raw: string;
     phone_normalized: string;
     module_average: number | null;
+    is_active: number;
     started_at: string | null;
     submitted_at: string | null;
     status: string;

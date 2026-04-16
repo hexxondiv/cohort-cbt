@@ -30,6 +30,18 @@ body {
   background: rgba(14, 165, 233, 0.18);
 }
 
+/* Native <dialog> centering (Preflight resets margins; top-layer dialogs need explicit centering.) */
+dialog:modal {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  margin: 0;
+  max-width: calc(100vw - 2rem);
+  max-height: min(90dvh, 100vh);
+  overflow-y: auto;
+  transform: translate(-50%, -50%);
+}
+
 a,
 button,
 input,

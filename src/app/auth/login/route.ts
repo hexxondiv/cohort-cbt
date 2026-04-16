@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createStudentSession } from "@/lib/auth";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { getRequestOrigin } from "@/lib/request-origin";
-import { ensureAttempt, findStudentByPhone } from "@/lib/repository";
+import { ensureAttempt, findStudentByNormalizedPhone } from "@/lib/repository";
 
 async function redirectWithError(request: Request, message: string) {
   const url = new URL("/", await getRequestOrigin(request));
@@ -20,10 +20,17 @@ export async function POST(request: Request) {
 
   try {
     const normalizedPhone = normalizePhoneNumber(phoneValue);
-    const student = findStudentByPhone(normalizedPhone);
+    const student = findStudentByNormalizedPhone(normalizedPhone);
 
     if (!student) {
       return redirectWithError(request, "This phone number is not on the preregistered cohort roster.");
+    }
+
+    if (student.is_active !== 1) {
+      return redirectWithError(
+        request,
+        "This cohort account is inactive. Contact your facilitator if you need access.",
+      );
     }
 
     ensureAttempt(student.id);

@@ -48,6 +48,8 @@ export function AssessmentShell({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [remainingSeconds, setRemainingSeconds] = useState(initialRemainingSeconds);
   const [toast, setToast] = useState("");
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const submitConfirmRef = useRef<HTMLDialogElement | null>(null);
   const timedSubmitButtonRef = useRef<HTMLButtonElement | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveRequestIdRef = useRef(0);
@@ -56,6 +58,7 @@ export function AssessmentShell({
     () => questions.filter((question) => (answers[question.id] ?? "").trim().length > 0).length,
     [answers, questions],
   );
+  const unansweredCount = questions.length - answeredCount;
   const assessmentEnded = status === "submitted";
 
   const answerForCurrentQuestion =
@@ -207,6 +210,23 @@ export function AssessmentShell({
     queueSave(questionId, answer);
   }
 
+  function openSubmitConfirm() {
+    submitConfirmRef.current?.showModal();
+  }
+
+  function closeSubmitConfirm() {
+    submitConfirmRef.current?.close();
+  }
+
+  function confirmFinalSubmit() {
+    const form = formRef.current;
+    const submitter = timedSubmitButtonRef.current;
+    closeSubmitConfirm();
+    if (form && submitter) {
+      form.requestSubmit(submitter);
+    }
+  }
+
   if (assessmentEnded) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-16">
@@ -235,6 +255,7 @@ export function AssessmentShell({
   return (
     <>
       <form
+        ref={formRef}
         action="/assessment/flow"
         method="post"
         className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 lg:flex-row lg:px-6"
@@ -287,9 +308,8 @@ export function AssessmentShell({
           </div>
 
           <button
-            type="submit"
-            name="intent"
-            value="submit"
+            type="button"
+            onClick={openSubmitConfirm}
             className="w-full rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-amber-400"
           >
             Submit assessment
@@ -303,7 +323,15 @@ export function AssessmentShell({
           >
             Log out
           </button>
-            <button type="submit" name="intent" value="submit" ref={timedSubmitButtonRef} className="hidden">
+            <button
+              type="submit"
+              name="intent"
+              value="submit"
+              ref={timedSubmitButtonRef}
+              className="hidden"
+              aria-hidden
+              tabIndex={-1}
+            >
               Timed submit
             </button>
           </div>
@@ -407,6 +435,53 @@ export function AssessmentShell({
         </div>
         </section>
       </form>
+
+      <dialog
+        ref={submitConfirmRef}
+        className="w-[min(100%,26rem)] rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop:bg-slate-950/40"
+        aria-labelledby="submit-confirm-title"
+      >
+        <div className="space-y-4">
+          <div>
+            <h3 id="submit-confirm-title" className="text-lg font-semibold text-slate-950">
+              Submit assessment?
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Your answers will be saved and the assessment will be locked. You will not be able to change your
+              responses after this.
+            </p>
+            <p className="mt-3 text-sm text-slate-700">
+              <span className="font-semibold text-slate-950">
+                {answeredCount}/{questions.length}
+              </span>{" "}
+              questions have an answer.
+            </p>
+            {unansweredCount > 0 ? (
+              <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {unansweredCount === 1
+                  ? "1 question still has no answer."
+                  : `${unansweredCount} questions still have no answer.`}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={closeSubmitConfirm}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmFinalSubmit}
+              className="rounded-2xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-amber-400"
+            >
+              Yes, submit now
+            </button>
+          </div>
+        </div>
+      </dialog>
     </>
   );
 }

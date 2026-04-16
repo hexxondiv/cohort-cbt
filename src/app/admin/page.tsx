@@ -1,6 +1,8 @@
+import { AdminAddStudentForm } from "@/components/admin-add-student-form";
 import { AdminBulkActions } from "@/components/admin-bulk-actions";
 import { AdminLiveModeSwitch } from "@/components/admin-live-mode";
 import { AdminStudentActions } from "@/components/admin-student-actions";
+import { AdminStudentEditDelete } from "@/components/admin-student-edit-delete";
 import { AdminLogoutButton } from "@/components/admin-logout-button";
 import { AdminLoginForm } from "@/components/admin-login-form";
 import { getAdminSession } from "@/lib/auth";
@@ -60,6 +62,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </div>
         </div>
 
+        <AdminAddStudentForm />
+
         <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-100">
@@ -71,14 +75,22 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   <th className="px-5 py-4 font-medium">Answered</th>
                   <th className="px-5 py-4 font-medium">Started</th>
                   <th className="px-5 py-4 font-medium">Submitted</th>
-                  <th className="px-5 py-4 font-medium">Actions</th>
+                  <th className="px-5 py-4 font-medium">Export / reset</th>
+                  <th className="px-5 py-4 font-medium">Roster</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
                 {students.map((student) => (
                   <tr key={student.id}>
                     <td className="px-5 py-4">
-                      <p className="font-semibold text-slate-950">{student.full_name}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-slate-950">{student.full_name}</p>
+                        {student.is_active === 0 ? (
+                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-600">
+                            Inactive
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="text-slate-500">{student.email}</p>
                     </td>
                     <td className="px-5 py-4">{student.phone_normalized}</td>
@@ -103,7 +115,21 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                       {formatFixedTimestamp(student.submitted_at) ?? "-"}
                     </td>
                     <td className="px-5 py-4">
-                      <AdminStudentActions studentId={student.id} studentName={student.full_name} />
+                      <AdminStudentActions
+                        studentId={student.id}
+                        studentName={student.full_name}
+                        attemptStatus={student.status}
+                      />
+                    </td>
+                    <td className="px-5 py-4">
+                      <AdminStudentEditDelete
+                        studentId={student.id}
+                        fullName={student.full_name}
+                        email={student.email}
+                        phoneRaw={student.phone_raw}
+                        moduleAverage={student.module_average}
+                        isActive={student.is_active === 1}
+                      />
                     </td>
                   </tr>
                 ))}
