@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Educare Re-Entry CBT
 
-## Getting Started
+Next.js + React + Tailwind + Node.js CBT platform for the cohort-wide re-entry assessment. Responses are stored in SQLite, students are preregistered, phone login is normalized on the backend, and `/admin` is protected with `admin` / `admin` by default.
 
-First, run the development server:
+## Features
+
+- SQLite-backed student roster, attempts, and responses
+- Preregistered cohort of 13 students
+- Phone-number login with backend normalization
+- 3-hour timed assessment
+- One-question-at-a-time interface with autosave
+- Copy, cut, paste, save, print, and context menu blocking during the test
+- Admin dashboard with per-student TXT answer downloads
+
+## Run locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev:host
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Admin credentials
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Username: `admin`
+- Password: `admin`
 
-## Learn More
+Override them if needed:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin
+SESSION_SECRET=change-me
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Host on Vercel
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Push this repository to GitHub, GitLab, or Bitbucket.
+2. Sign in at [vercel.com](https://vercel.com) and choose **Add New… → Project**, then import the repo.
+3. Leave the defaults: **Framework Preset** Next.js, **Build Command** `next build`, **Output Directory** `.next` (or leave empty).
+4. Under **Environment Variables**, add the same values you use locally (at minimum `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `SESSION_SECRET`). Redeploy after changing env vars.
+5. Deploy. Vercel will assign a production URL; you can add a custom domain under **Project → Settings → Domains**.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This app stores data in a **SQLite file under `data/`**. Vercel’s default serverless runtime does not provide durable disk for that file between requests, so a straight deploy may not behave like your local machine unless you move the database to a hosted service (for example [Turso](https://turso.tech/) or another managed SQL store) or run the app on a host with a persistent filesystem. For a quick public demo during development, run locally and use a tunnel, or use Vercel mainly after adapting storage.
