@@ -34,12 +34,98 @@ ADMIN_PASSWORD=admin
 SESSION_SECRET=change-me
 ```
 
-## Host on Vercel
+## Host on a DigitalOcean Droplet (Apache 2, Ubuntu 18.04)
 
-1. Push this repository to GitHub, GitLab, or Bitbucket.
-2. Sign in at [vercel.com](https://vercel.com) and choose **Add New… → Project**, then import the repo.
-3. Leave the defaults: **Framework Preset** Next.js, **Build Command** `next build`, **Output Directory** `.next` (or leave empty).
-4. Under **Environment Variables**, add the same values you use locally (at minimum `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `SESSION_SECRET`). Redeploy after changing env vars.
-5. Deploy. Vercel will assign a production URL; you can add a custom domain under **Project → Settings → Domains**.
+These steps assume a fresh **Ubuntu 18.04** droplet and serving the app behind **Apache 2** on port 80 (Next.js listens on `127.0.0.1:3000`). SQLite under `data/` works on the droplet’s disk.
 
-This app stores data in a **SQLite file under `data/`**. Vercel’s default serverless runtime does not provide durable disk for that file between requests, so a straight deploy may not behave like your local machine unless you move the database to a hosted service (for example [Turso](https://turso.tech/) or another managed SQL store) or run the app on a host with a persistent filesystem. For a quick public demo during development, run locally and use a tunnel, or use Vercel mainly after adapting storage.
+1. **Create the droplet** in the DigitalOcean control panel (Ubuntu 18.04, size to taste), add your SSH key, then connect: `ssh root@YOUR_DROPLET_IP`.
+
+2. **Install Node.js** (18 LTS is a reasonable target on 18.04). Example using NodeSource:
+
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+   sudo apt-get install -y nodejs build-essential
+   ```
+
+   Native modules such as `better-sqlite3` need `build-essential` for `npm install`.
+
+3. **Install Apache and proxy modules**, then enable them:
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y apache2
+   sudo a2enmod proxy proxy_http headers rewrite
+   sudo systemctl restart apache2
+   ```
+
+4. **Deploy the app** (example path `/var/www/cohort-cbt`; adjust user/permissions as you prefer):
+
+   ```bash
+   sudo mkdir -p /var/www/cohort-cbt
+   sudo chown "$USER":"$USER" /var/www/cohort-cbt
+   cd /var/www/cohort-cbt
+   git clone https://github.com/hexxondiv/cohort-cbt.git .
+   npm install
+   ```
+
+   Create `/var/www/cohort-cbt/.env` (or export variables in the systemd unit below) with at least `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `SESSION_SECRET`, then:
+
+   ```bash
+   npm run build
+   ```
+
+5. **Run Next.js with systemd** so it stays up after logout. Example `/etc/systemd/system/cohort-cbt.service`:
+
+   ```ini
+   [Unit]
+   Description=Cohort CBT (Next.js)
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=www-data
+   WorkingDirectory=/var/www/cohort-cbt
+   EnvironmentFile=/var/www/cohort-cbt/.env
+   ExecStart=/usr/bin/npm start
+   Restart=on-failure
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   Ensure `www-data` can read the app directory and write `data/` (for SQLite): e.g. `sudo chown -R www-data:www-data /var/www/cohort-cbt` after build, or keep `data/` owned by `www-data` only. Then:
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now cohort-cbt
+   ```
+
+6. **Apache virtual host** as reverse proxy. Create `/etc/apache2/sites-available/cohort-cbt.conf`:
+
+   ```apache
+   <VirtualHost *:80>
+       ServerName your-domain.com
+
+       ProxyPreserveHost On
+       ProxyPass / http://127.0.0.1:3000/
+       ProxyPassReverse / http://127.0.0.1:3000/
+
+       ErrorLog ${APACHE_LOG_DIR}/cohort-cbt-error.log
+       CustomLog ${APACHE_LOG_DIR}/cohort-cbt-access.log combined
+   </VirtualHost>
+   ```
+
+   Enable the site and reload Apache:
+
+   ```bash
+   sudo a2dissite 000-default.conf
+   sudo a2ensite cohort-cbt.conf
+   sudo apache2ctl configtest
+   sudo systemctl reload apache2
+   ```
+
+7. **Firewall** (if `ufw` is enabled): allow SSH, HTTP, and HTTPS, e.g. `sudo ufw allow OpenSSH && sudo ufw allow 'Apache Full' && sudo ufw enable`.
+
+8. **HTTPS (recommended):** install Certbot’s Apache plugin and obtain certificates for `your-domain.com`, or terminate TLS on Apache and keep proxying to `http://127.0.0.1:3000`.
+
+Point your domain’s **A record** at the droplet’s public IP. Replace `your-domain.com` in the vhost with your real hostname.
