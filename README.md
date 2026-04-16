@@ -36,20 +36,29 @@ SESSION_SECRET=change-me
 
 ## Host on a DigitalOcean Droplet (Apache 2, Ubuntu 18.04)
 
-These steps assume a fresh **Ubuntu 18.04** droplet and serving the app behind **Apache 2** on port 80 (Next.js listens on `127.0.0.1:3000`). SQLite under `data/` works on the droplet’s disk.
+These steps assume an **Ubuntu 18.04** droplet that already has **Node.js 16** as the active/default `node` (other apps on the host depend on it) and **Node.js 18** installed as well. Serve the app behind **Apache 2** on port 80 (Next.js listens on `127.0.0.1:3000`). SQLite under `data/` works on the droplet’s disk.
 
-1. **Create the droplet** in the DigitalOcean control panel (Ubuntu 18.04, size to taste), add your SSH key, then connect: `ssh root@YOUR_DROPLET_IP`.
+**Which Node for cohort-cbt:** Next.js 16 requires **Node.js ≥ 20.9.0** (see `engines` in `next`). Node **16** and **18** are not enough for `npm run build` / `npm start` on this repo. Keep **16** as the global default for other apps; add **Node.js 20 LTS** alongside and use it **only** for installing, building, and running this project (explicit `PATH` or `ExecStart` in systemd below—do not assume the default `node` is 20).
 
-2. **Install Node.js** (18 LTS is a reasonable target on 18.04). Example using NodeSource:
+1. **SSH** to the droplet, e.g. `ssh root@YOUR_DROPLET_IP` (or your deploy user).
+
+2. **Compiler toolchain** for native modules: if missing, install `build-essential` (needed for `better-sqlite3` during `npm install`):
 
    ```bash
-   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-   sudo apt-get install -y nodejs build-essential
+   sudo apt-get update
+   sudo apt-get install -y build-essential
    ```
 
-   Native modules such as `better-sqlite3` need `build-essential` for `npm install`.
+3. **Node.js 20 for this app** (if not already installed). Pick an install layout that lets you point **only** cohort-cbt at Node 20—for example an official binary under `/opt/node-v20`, `n`/`nvm` with a known path, or NodeSource for 20.x. Example using NodeSource (verify with `$(command -v node) -v` that you are invoking 20.x when building and in systemd):
 
-3. **Install Apache and proxy modules**, then enable them:
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+   sudo apt-get install -y nodejs
+   ```
+
+   If that changes which `node` is default system-wide and other apps must stay on 16, restore their behavior (e.g. `update-alternatives`, or run those apps with the full path to the Node 16 binary) and keep cohort-cbt’s unit using the Node 20 path.
+
+4. **Install Apache and proxy modules**, then enable them:
 
    ```bash
    sudo apt-get update
@@ -58,13 +67,15 @@ These steps assume a fresh **Ubuntu 18.04** droplet and serving the app behind *
    sudo systemctl restart apache2
    ```
 
-4. **Deploy the app** (example path `/var/www/cohort-cbt`; adjust user/permissions as you prefer):
+5. **Deploy the app** (example path `/var/www/cohort-cbt`; adjust user/permissions as you prefer). Run `npm install` and `npm run build` with **Node 20** on your `PATH` (not the default Node 16):
 
    ```bash
    sudo mkdir -p /var/www/cohort-cbt
    sudo chown "$USER":"$USER" /var/www/cohort-cbt
    cd /var/www/cohort-cbt
    git clone https://github.com/hexxondiv/cohort-cbt.git .
+   export PATH="/path/to/node20/bin:$PATH"   # e.g. /opt/node-v20/bin — use your real Node 20 prefix
+   node -v   # should report v20.x
    npm install
    ```
 
@@ -74,7 +85,7 @@ These steps assume a fresh **Ubuntu 18.04** droplet and serving the app behind *
    npm run build
    ```
 
-5. **Run Next.js with systemd** so it stays up after logout. Example `/etc/systemd/system/cohort-cbt.service`:
+6. **Run Next.js with systemd** so it stays up after logout. Use the **same Node 20** you used for install/build so `npm start` does not pick up Node 16. Example `/etc/systemd/system/cohort-cbt.service` (adjust `PATH` to your Node 20 `bin` directory):
 
    ```ini
    [Unit]
@@ -86,7 +97,8 @@ These steps assume a fresh **Ubuntu 18.04** droplet and serving the app behind *
    User=www-data
    WorkingDirectory=/var/www/cohort-cbt
    EnvironmentFile=/var/www/cohort-cbt/.env
-   ExecStart=/usr/bin/npm start
+   Environment=PATH=/path/to/node20/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+   ExecStart=/path/to/node20/bin/npm start
    Restart=on-failure
 
    [Install]
@@ -100,7 +112,7 @@ These steps assume a fresh **Ubuntu 18.04** droplet and serving the app behind *
    sudo systemctl enable --now cohort-cbt
    ```
 
-6. **Apache virtual host** as reverse proxy. Create `/etc/apache2/sites-available/cohort-cbt.conf`:
+7. **Apache virtual host** as reverse proxy. Create `/etc/apache2/sites-available/cohort-cbt.conf`:
 
    ```apache
    <VirtualHost *:80>
@@ -124,8 +136,8 @@ These steps assume a fresh **Ubuntu 18.04** droplet and serving the app behind *
    sudo systemctl reload apache2
    ```
 
-7. **Firewall** (if `ufw` is enabled): allow SSH, HTTP, and HTTPS, e.g. `sudo ufw allow OpenSSH && sudo ufw allow 'Apache Full' && sudo ufw enable`.
+8. **Firewall** (if `ufw` is enabled): allow SSH, HTTP, and HTTPS, e.g. `sudo ufw allow OpenSSH && sudo ufw allow 'Apache Full' && sudo ufw enable`.
 
-8. **HTTPS (recommended):** install Certbot’s Apache plugin and obtain certificates for `your-domain.com`, or terminate TLS on Apache and keep proxying to `http://127.0.0.1:3000`.
+9. **HTTPS (recommended):** install Certbot’s Apache plugin and obtain certificates for `your-domain.com`, or terminate TLS on Apache and keep proxying to `http://127.0.0.1:3000`.
 
 Point your domain’s **A record** at the droplet’s public IP. Replace `your-domain.com` in the vhost with your real hostname.
